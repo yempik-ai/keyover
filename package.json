@@ -52,14 +52,13 @@
   },
   "packageManager": "pnpm@12.18.0",
   "scripts": {
-    "prepare": "tsc -p tsconfig.build.json",
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "site": "pnpm --filter site dev",
     "check": "pnpm typecheck && pnpm test && pnpm build && pnpm --filter site typecheck && pnpm --filter site build",
     "tables": "node scripts/readme-tables.ts",
-    "prepublishOnly": "pnpm typecheck && pnpm test"
+    "prepublishOnly": "pnpm typecheck && pnpm test && pnpm build"
   },
   "devDependencies": {
     "@ai-sdk/anthropic": "4.0.99",
