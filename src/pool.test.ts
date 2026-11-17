@@ -379,7 +379,6 @@ describe("createKeyPool", () => {
         credentials: "omit",
         cache: "no-store",
         redirect: "error",
-        referrerPolicy: "no-referrer",
       }),
     )
     expect(seen).toHaveLength(2)
@@ -389,7 +388,6 @@ describe("createKeyPool", () => {
         credentials: "omit",
         cache: "no-store",
         redirect: "error",
-        referrerPolicy: "no-referrer",
       })
     }
   })
