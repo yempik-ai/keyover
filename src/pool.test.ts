@@ -319,15 +319,93 @@ describe("createKeyPool", () => {
 
   it("stops before the next key once the caller aborts", async () => {
     const controller = new AbortController()
+    const sent: (string | null)[] = []
     const keys = createKeyPool({
       provider: OPENAI,
       keys: { a: "ka", b: "kb" },
-      fetch: async () => {
+      fetch: async (input, init) => {
+        sent.push(new Request(input, init).headers.get("authorization"))
         controller.abort(new Error("caller gave up"))
         return OUT_OF_CREDIT()
       },
     })
     await expect(keys.fetch(URL_, { signal: controller.signal })).rejects.toThrow("caller gave up")
+    expect(sent).toEqual(["Bearer ka"])
+  })
+
+  it("never lets a key out in an error: the transport's, or a header's own", async () => {
+    const leaky = createKeyPool({
+      provider: OPENAI,
+      keys: { a: "sk-secret-a" },
+      fetch: async (input, init) => {
+        throw new TypeError(`connect failed for ${new Request(input, init).headers.get("authorization")}`)
+      },
+    })
+    const error = await leaky.fetch(URL_, { method: "POST", body: "{}" }).catch((e: unknown) => e)
+    expect(error).toMatchObject({ name: "TypeError", message: "connect failed for Bearer [key]" })
+    expect(String((error as Error).stack)).not.toContain("sk-secret-a")
+
+    // A key no header can carry is refused at startup, by name. A stray newline is trimmed.
+    expect(() => createKeyPool({ provider: OPENAI, keys: { a: "sk-bad\u0000key" } })).toThrow(
+      'key pool for openai: key "a" has characters a header cannot carry',
+    )
+    const sent: (string | null)[] = []
+    const trimmed = createKeyPool({
+      provider: OPENAI,
+      keys: { a: "sk-from-a-file\n" },
+      fetch: async (input, init) => {
+        sent.push(new Request(input, init).headers.get("authorization"))
+        return json(200, {})
+      },
+    })
+    await trimmed.fetch(URL_)
+    expect(sent).toEqual(["Bearer sk-from-a-file"])
+  })
+
+  it("resends a Request with the options it came with", async () => {
+    const seen: RequestInit[] = []
+    const keys = createKeyPool({
+      provider: OPENAI,
+      keys: { a: "ka", b: "kb" },
+      fetch: async (_input, init) => {
+        seen.push(init!)
+        return seen.length === 1 ? OUT_OF_CREDIT() : json(200, {})
+      },
+    })
+    await keys.fetch(
+      new Request(URL_, {
+        method: "POST",
+        body: "{}",
+        credentials: "omit",
+        cache: "no-store",
+        redirect: "error",
+        referrerPolicy: "no-referrer",
+      }),
+    )
+    expect(seen).toHaveLength(2)
+    for (const init of seen) {
+      expect(init).toMatchObject({
+        method: "POST",
+        credentials: "omit",
+        cache: "no-store",
+        redirect: "error",
+        referrerPolicy: "no-referrer",
+      })
+    }
+  })
+
+  it("keeps the cooldown a number however long a key keeps rejecting", async () => {
+    let clock = 0
+    const keys = createKeyPool({
+      provider: OPENAI,
+      keys: { a: "ka" },
+      cooldownMs: { initial: 0, max: 0 },
+      now: () => clock++,
+      fetch: async () => OUT_OF_CREDIT(),
+    })
+    for (let i = 0; i < 1_100; i++) await keys.fetch(URL_)
+    // Zero cooldown: over at once, so the key is due a probe, not parked forever.
+    expect(keys.status()[0]).toMatchObject({ state: "recovering", consecutiveRejections: 1_100 })
   })
 })
 

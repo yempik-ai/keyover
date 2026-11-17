@@ -1,12 +1,14 @@
 # Security
 
-keyover sits between your SDK and your provider and holds your API keys in memory. It sends a key only to the URL your SDK asked for, and it never logs, prints or returns key material: events, `status()` and the `check` command carry the names you gave the keys.
+keyover sits between your SDK and your provider and holds your API keys in memory. It puts a key only on the request your SDK made, and it never logs, prints or returns key material: events, `status()` and the `check` command carry the names you gave the keys, and a key quoted in a transport error is removed from it.
+
+Redirects are left to the transport, exactly as without the pool. `fetch` drops `Authorization` when a redirect leaves the origin, but not a header such as `x-api-key`. If your base URL can redirect, pass `redirect: "error"` in your SDK's fetch options.
 
 ## Reporting a problem
 
 Please report privately, through a [security advisory](https://github.com/yempik-ai/keyover/security/advisories/new) on this repository, if you find a way to make keyover:
 
-- send a key to a host other than the one the request addressed;
+- put a key on a request your SDK did not make;
 - put key material in an event, a status, a thrown error, or the output of `check`;
 - resend a request on a response that is not a billing or key rejection, so that it could run twice;
 - move a request for a rate limit, a safety hold or an access restriction.

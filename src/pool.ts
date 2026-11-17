@@ -166,6 +166,9 @@ export const POOLED_API_KEY = "pooled-by-key-failover"
 
 const DEFAULT_COOLDOWN = { initial: 30_000, max: 300_000 } as const
 
+/** A key with a character outside printable ASCII: no header can carry it, and the error that says so quotes it. */
+const UNSENDABLE = /[^\x21-\x7e]/
+
 /** Statuses a profile is asked about; every other response passes through unread. */
 const CLASSIFIED_STATUSES = new Set([400, 401, 402, 403, 429])
 
@@ -193,8 +196,12 @@ export function createKeyPool<Id extends string>(options: KeyPoolOptions<Id>): K
   const states: KeyState<Id>[] = []
   for (const id of Object.keys(options.keys) as Id[]) {
     const entry: PoolKey = options.keys[id]
-    const apiKey = typeof entry === "object" ? entry?.apiKey : entry
+    // Trimmed: a newline left by a secret file is the usual way a good key gets refused.
+    const apiKey = (typeof entry === "object" ? entry?.apiKey : entry)?.trim()
     if (!apiKey) continue
+    if (UNSENDABLE.test(apiKey)) {
+      throw new Error(`key pool for ${provider.name}: key "${id}" has characters a header cannot carry`)
+    }
     const headers = (typeof entry === "object" && entry?.headers) || {}
     states.push({ id, apiKey, headers, consecutive: 0, lastReason: null, retryAt: 0, probing: false })
   }
@@ -218,7 +225,11 @@ export function createKeyPool<Id extends string>(options: KeyPoolOptions<Id>): K
   const reject = (state: KeyState<Id>, reason: RejectionReason, status: number): void => {
     state.consecutive += 1
     state.lastReason = reason
-    const cooldownMs = Math.min(cooldown.max, cooldown.initial * 2 ** (state.consecutive - 1))
+    // The exponent is capped so a long run of rejections cannot overflow into NaN.
+    const cooldownMs = Math.min(
+      cooldown.max,
+      cooldown.initial * 2 ** Math.min(state.consecutive - 1, 30),
+    )
     state.retryAt = now() + cooldownMs
     emit({
       type: "key_rejected",
@@ -240,21 +251,25 @@ export function createKeyPool<Id extends string>(options: KeyPoolOptions<Id>): K
 
   /** One key's attempt: the request, and once more made portable when the profile can. */
   const attempt = async (state: KeyState<Id>, request: ReplayableRequest): Promise<Response> => {
-    const headers = new Headers(request.headers)
-    provider.authorize(headers, state.apiKey)
-    for (const [name, value] of Object.entries(state.headers)) headers.set(name, value)
-    const response = await request.send(headers)
-    if (response.ok || provider.portable === undefined) return response
-    const json = request.json()
-    if (json === undefined) return response
-    const rewritten = provider.portable(response.status, await errorBodyOf(response), json)
-    if (rewritten === null || rewritten === undefined) return response
-    await response.body?.cancel().catch(() => undefined)
-    request.replaceJson(rewritten)
-    // The body changed length: the transport measures it again.
-    headers.delete("content-length")
-    emit({ type: "request_made_portable", key: state.id })
-    return request.send(headers)
+    try {
+      const headers = new Headers(request.headers)
+      provider.authorize(headers, state.apiKey)
+      for (const [name, value] of Object.entries(state.headers)) headers.set(name, value)
+      const response = await request.send(headers)
+      if (provider.portable === undefined || !CLASSIFIED_STATUSES.has(response.status)) {
+        return response
+      }
+      const json = request.json()
+      if (json === undefined) return response
+      const rewritten = provider.portable(response.status, await errorBodyOf(response), json)
+      if (rewritten === null || rewritten === undefined) return response
+      await response.body?.cancel().catch(() => undefined)
+      request.replaceJson(rewritten)
+      emit({ type: "request_made_portable", key: state.id })
+      return await request.send(headers)
+    } catch (error) {
+      throw withoutKey(error, state.apiKey)
+    }
   }
 
   const pooledFetch = async (input: FetchInput, init?: RequestInit): Promise<Response> => {
@@ -353,7 +368,14 @@ async function replayable(
       method: request.method,
       signal: request.signal,
       redirect: request.redirect,
-      ...(request.keepalive ? { keepalive: true } : {}),
+      cache: request.cache,
+      credentials: request.credentials,
+      integrity: request.integrity,
+      keepalive: request.keepalive,
+      // "navigate" is a mode only the browser itself may set.
+      ...(request.mode === "navigate" ? {} : { mode: request.mode }),
+      referrer: request.referrer,
+      referrerPolicy: request.referrerPolicy,
     }
     headers = new Headers(request.headers)
     body = request.body === null ? null : await buffered(request.body, request.signal)
@@ -365,6 +387,7 @@ async function replayable(
       init?.body instanceof ReadableStream ? await buffered(init.body, init.signal) : init?.body
   }
   let json: { readonly value: unknown } | undefined
+  let rewritten = false
   return {
     headers,
     signal: base.signal,
@@ -375,10 +398,14 @@ async function replayable(
     replaceJson(next) {
       json = { value: next }
       body = JSON.stringify(next)
+      rewritten = true
       headers.delete("content-length")
     },
-    send: (sent) =>
-      transport(target, { ...base, ...(body === undefined ? {} : { body }), headers: sent }),
+    send(sent) {
+      // The body changed length: no header, a key's own included, may state the old one.
+      if (rewritten) sent.delete("content-length")
+      return transport(target, { ...base, ...(body === undefined ? {} : { body }), headers: sent })
+    },
   }
 }
 
@@ -427,22 +454,51 @@ function parseJson(body: RequestInit["body"]): unknown {
   }
 }
 
-/** The parsed JSON error body of a response, read from a copy so the caller still gets it. */
-async function errorBodyOf(response: Response): Promise<unknown> {
-  try {
-    return JSON.parse(await response.clone().text())
-  } catch {
-    return null
+const errorBodies = new WeakMap<Response, Promise<unknown>>()
+
+/** The parsed JSON error body of a response, read once, from a copy so the caller still gets it. */
+function errorBodyOf(response: Response): Promise<unknown> {
+  let body = errorBodies.get(response)
+  if (body === undefined) {
+    body = response
+      .clone()
+      .text()
+      .then((text) => JSON.parse(text) as unknown)
+      .catch(() => null)
+    errorBodies.set(response, body)
   }
+  return body
 }
 
-/** The response as the final answer: `x-should-retry: false`, since no retry can change it. */
+/**
+ * The response as the final answer: `x-should-retry: false`, since no retry can
+ * change it. A fetched response's headers are immutable, so it is rebuilt, and
+ * keeps the address it came from.
+ */
 function final(response: Response): Response {
   const headers = new Headers(response.headers)
   headers.set("x-should-retry", "false")
-  return new Response(response.body, {
+  const rebuilt = new Response(response.body, {
     status: response.status,
     statusText: response.statusText,
     headers,
   })
+  Object.defineProperties(rebuilt, {
+    url: { value: response.url },
+    redirected: { value: response.redirected },
+  })
+  return rebuilt
+}
+
+/**
+ * `error` with the key removed from its message. A transport, or `Headers`
+ * itself, can quote a header value in what it throws, and errors get logged.
+ * An error that does not carry the key is returned as it is.
+ */
+function withoutKey(error: unknown, apiKey: string): unknown {
+  if (!(error instanceof Error)) return error
+  if (!error.message.includes(apiKey) && !error.stack?.includes(apiKey)) return error
+  const clean = new Error(error.message.replaceAll(apiKey, "[key]"))
+  clean.name = error.name
+  return clean
 }

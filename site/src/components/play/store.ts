@@ -84,6 +84,8 @@ export function createPlayground(): Playground {
   let inFlight = 0;
   let tour = new Set<TourStep>();
   let current!: Snapshot;
+  /** Bumped by every rebuild: an answer from a pool that is gone is dropped. */
+  let session = 0;
   let ticker: ReturnType<typeof setInterval> | undefined;
 
   const publish = () => {
@@ -107,6 +109,8 @@ export function createPlayground(): Playground {
   };
 
   const build = () => {
+    session += 1;
+    inFlight = 0;
     exchanges = [];
     events = [];
     served = 0;
@@ -140,7 +144,10 @@ export function createPlayground(): Playground {
     const n = (exchanges[0]?.n ?? 0) + 1;
     const { url, path } = ENDPOINT[flavor];
     const usedPool = pooled;
-    const firstCall = provider.calls.length;
+    const mine = session;
+    const sentTo = provider;
+    const sentAs = flavor;
+    const firstCall = sentTo.calls.length;
     const exchange: Exchange = { n, path, pooled: usedPool, hops: [], result: null };
     exchanges = [exchange, ...exchanges].slice(0, 40);
     inFlight += 1;
@@ -159,12 +166,13 @@ export function createPlayground(): Playground {
       body: JSON.stringify({ model: "playground", input: "Hello" }),
     });
     const body: unknown = await response.json();
-    const hops = provider.calls.slice(firstCall).map(
+    if (mine !== session) return;
+    const hops = sentTo.calls.slice(firstCall).map(
       (call): Hop => ({
         org: call.org ?? "primary",
         status: call.status,
         outcome: call.outcome,
-        detail: call.outcome === "served" ? null : DETAIL[flavor][call.outcome],
+        detail: call.outcome === "served" ? null : DETAIL[sentAs][call.outcome],
       }),
     );
     const last = hops.at(-1);

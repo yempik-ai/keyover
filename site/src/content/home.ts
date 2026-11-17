@@ -59,7 +59,7 @@ export const home = {
         { what: "Out of credit", code: "429 insufficient_quota" },
         { what: "Credit balance too low", code: "400 credit balance is too low" },
         { what: "Spend limit reached", code: "429 organization_spend_limit_exceeded" },
-        { what: "Key revoked or not accepted", code: "401" },
+        { what: "A key the provider does not know", code: "401 invalid_api_key" },
       ],
     },
     stays: {
@@ -150,7 +150,7 @@ export const home = {
       },
       {
         q: "Does it rotate keys to get around rate limits?",
-        a: "No. A rate limit returns to your SDK untouched, and the SDK retries it as it always did. The pool also never moves a request for a safety hold, a region restriction or a model your key cannot access, and by default it does not move one for a spending cap your provider assigned to your usage tier. It is built for billing resilience between organizations you are authorized to use, not for multiplying free tiers or limits.",
+        a: "No. A rate limit returns to your SDK untouched, and the SDK retries it as it always did. The pool also never moves a request for a safety hold, a region or IP restriction or a model your key cannot access, and by default it does not move one for a spending cap your provider assigned to your usage tier. It is built for billing resilience between organizations you are authorized to use, not for multiplying free tiers or limits.",
       },
       {
         q: "Can a failover run my request twice?",
@@ -166,7 +166,7 @@ export const home = {
       },
       {
         q: "How does a key come back after I add credit?",
-        a: "A rejected key cools down, 30 seconds at first and up to 5 minutes. When the cooldown ends, a single request probes it while the others stay on the serving key. Once it answers 2xx it takes its priority back, with no restart. A cooling key is never refused locally: if every other key rejects, it is tried last, so a top-up works at once.",
+        a: "A rejected key cools down, 30 seconds at first and up to 5 minutes. When the cooldown ends, a single request probes it while the others prefer the keys that serve. Once it answers 2xx it takes its priority back, with no restart. A cooling key is never refused locally: if every other key rejects, it is tried last, so a top-up works at once.",
       },
       {
         q: "How is it different from LiteLLM, Portkey or OpenRouter?",

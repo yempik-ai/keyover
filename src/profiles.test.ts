@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { CONTRACTS, type ProviderId } from "../spec/contracts.ts"
+import { CONTRACTS, type Contract, type ProviderId } from "../spec/contracts.ts"
 import {
   ANTHROPIC,
   CEREBRAS,
@@ -8,6 +8,7 @@ import {
   FIREWORKS,
   GEMINI,
   GROQ,
+  type KeyEvent,
   MISTRAL,
   OPENAI,
   OPENROUTER,
@@ -28,28 +29,58 @@ const PROFILES: Record<ProviderId, ProviderProfile> = {
   cerebras: CEREBRAS,
 }
 
-/** The statuses the pool asks a profile about; any other response passes unread. */
-const ASKED = new Set([400, 401, 402, 403, 429])
+const EVERY_REASON = ["credit", "spend_limit", "provider_limit", "auth"] as const
+
+/**
+ * What a pool does with the contract's answer: the reason it rejected the
+ * first key for, or null when the answer went back to the caller untouched.
+ * It goes through the pool, so the statuses a profile is never asked about are
+ * tested for what they are: answers that pass.
+ */
+async function verdict(contract: Contract) {
+  const sent: string[] = []
+  const events: KeyEvent[] = []
+  const pool = createKeyPool({
+    provider: PROFILES[contract.provider],
+    keys: { first: "k-first", second: "k-second" },
+    failoverOn: EVERY_REASON,
+    onEvent: (event) => events.push(event),
+    fetch: async (input, init) => {
+      const headers = new Request(input, init).headers
+      const key = headers.get("authorization") ?? headers.get("x-api-key") ?? headers.get("x-goog-api-key")
+      sent.push(key!.replace("Bearer ", ""))
+      return sent.length === 1
+        ? Response.json(contract.body, { status: contract.status, headers: { ...contract.headers } })
+        : Response.json({ ok: true })
+    },
+  })
+  const response = await pool.fetch("https://provider.test/v1/x", { method: "POST", body: "{}" })
+  const rejected = events.find((event) => event.type === "key_rejected")
+  return { status: response.status, sent, reason: rejected?.type === "key_rejected" ? rejected.reason : null }
+}
 
 describe("the evidence ledger", () => {
   it.each(CONTRACTS.map((contract) => [contract.provider, contract.status, contract.title, contract] as const))(
     "%s %i %s",
-    (_provider, _status, _title, contract) => {
-      const profile = PROFILES[contract.provider]
-      const reason = ASKED.has(contract.status)
-        ? profile.classify(contract.status, contract.body, new Headers(contract.headers))
-        : null
+    async (_provider, _status, _title, contract) => {
+      const { status, sent, reason } = await verdict(contract)
+
       expect(reason).toBe(contract.expect)
+      if (contract.expect === null) {
+        // Untouched, and the second key never saw the request.
+        expect([status, sent]).toEqual([contract.status, ["k-first"]])
+      } else {
+        expect([status, sent]).toEqual([200, ["k-first", "k-second"]])
+      }
     },
   )
 
-  it("covers every profile with a rejection it moves for and, where one is documented, an answer it leaves alone", () => {
+  it("holds, for every profile, a rejection it moves for and an answer it leaves alone", () => {
     for (const provider of Object.keys(PROFILES) as ProviderId[]) {
       const mine = CONTRACTS.filter((contract) => contract.provider === provider)
-      expect(mine.some((contract) => contract.expect !== null), provider).toBe(true)
+      expect(mine.some((contract) => contract.expect !== null), `${provider} moves`).toBe(true)
+      expect(mine.some((contract) => contract.expect === null), `${provider} passes`).toBe(true)
     }
-    // The ledger cannot pass by classifying nothing.
-    expect(CONTRACTS.filter((contract) => contract.expect === null).length).toBeGreaterThan(10)
   })
 })
 

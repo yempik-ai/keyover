@@ -14,7 +14,7 @@ interface ProviderError {
   readonly message?: unknown
   readonly status?: unknown
   readonly details?: unknown
-  readonly metadata?: { readonly limit_source?: unknown } | null
+  readonly metadata?: { readonly limit_source?: unknown; readonly reason?: unknown } | null
 }
 
 /** `body.error` as an object, the envelope most providers use, or null. */
@@ -34,7 +34,8 @@ function bearer(headers: Headers, apiKey: string): void {
  * names itself in `error.code`, while `error.type` may still read
  * `insufficient_quota`. `organization_usage_limit_exceeded` is the monthly
  * limit OpenAI assigns to the organization's tier, not one the organization
- * set. `slow_down` and the rate limits are not here: they pass.
+ * set. `slow_down` and the rate limits are not here: they pass. So does a code
+ * this list does not know: a new one may be a cap, not a balance.
  */
 const OPENAI_CODES: ReadonlyMap<unknown, RejectionReason> = new Map([
   ["insufficient_quota", "credit"],
@@ -65,10 +66,15 @@ export const OPENAI: ProviderProfile = {
     headers.delete("openai-project")
   },
   classify(status, body) {
-    if (status === 401) return "auth"
     const error = errorOf(body)
     if (error === null) return null
-    return OPENAI_CODES.get(error.code) ?? (error.type === "insufficient_quota" ? "credit" : null)
+    // A 401 is also how OpenAI refuses an IP outside the allowlist or a member
+    // removed from the organization. Only the code for a key it does not know moves.
+    if (status === 401) return error.code === "invalid_api_key" ? "auth" : null
+    const known = OPENAI_CODES.get(error.code)
+    if (known !== undefined) return known
+    // The form before the codes: the type alone, with no code of its own.
+    return error.type === "insufficient_quota" && typeof error.code !== "string" ? "credit" : null
   },
   portable(status, body, request) {
     if (status !== 400 || errorOf(body)?.code !== "invalid_encrypted_content") return null
@@ -94,7 +100,8 @@ const ANTHROPIC_OWN_LIMIT = /reached your specified (workspace )?API usage limit
 /**
  * Anthropic (https://platform.claude.com/docs/en/api/errors, …/rate-limits):
  * 402 `billing_error`; a 400 whose message names the credit balance, or a spend
- * limit the organization or workspace set; a 429 whose `details.error_code` is
+ * limit the organization or workspace set; a 401 `authentication_error`; a 429
+ * whose `details.error_code` is
  * `enforced_spend_limit_reached`, the monthly cap of the usage tier Anthropic
  * assigned. An organization on hold is a trust-and-safety decision and is
  * never a rejection to move for, whatever its status. A workspace limit of
@@ -120,8 +127,8 @@ export const ANTHROPIC: ProviderProfile = {
     if (detail === "organization_on_hold") return null
     // A browser request the organization does not allow: the key is fine, and no other key is the fix.
     if (status === 401 && ANTHROPIC_CORS.test(String(error?.message))) return null
-    if (status === 401) return "auth"
-    if (status === 402 || error?.type === "billing_error") return "credit"
+    if (status === 401) return error?.type === "authentication_error" ? "auth" : null
+    if (status === 402) return "credit"
     if (status === 429 && detail === "enforced_spend_limit_reached") return "provider_limit"
     if (status === 400 && typeof error?.message === "string") {
       if (ANTHROPIC_LOW_CREDIT.test(error.message)) return "credit"
@@ -157,9 +164,12 @@ export const GEMINI: ProviderProfile = {
   },
   classify(status, body) {
     if (status === 402) return "credit"
-    if (status === 401) return "auth"
+    const error = errorOf(body)
+    if (status === 401) {
+      return error?.code === "authentication" || error?.status === "UNAUTHENTICATED" ? "auth" : null
+    }
     if (status !== 400) return null
-    const details = errorOf(body)?.details
+    const details = error?.details
     return Array.isArray(details) &&
       details.some((d: unknown) => (d as { reason?: unknown } | null)?.reason === "API_KEY_INVALID")
       ? "auth"
@@ -175,22 +185,28 @@ const OPENROUTER_BUDGETS: ReadonlySet<unknown> = new Set([
 
 /**
  * OpenRouter (https://openrouter.ai/docs/api_reference/errors-and-debugging,
- * …/limits): 402 when the account or key has no credits left; 403 with
- * `error.metadata.limit_source` naming a budget the account set on a
- * guardrail, a workspace or a key. A 402 that carries `retry-after` (limit
- * source `openrouter_in_flight_budget`) is a reservation that frees itself: it
- * passes, like a rate limit. Every other 403 is moderation or permission.
+ * …/limits): 402 when the balance cannot cover the request; a 402 or 403 whose
+ * `error.metadata.limit_source` names a budget an admin set on a guardrail, a
+ * workspace or a key.
+ *
+ * Two 402s are not about an empty balance and pass. One carries `retry-after`
+ * (limit source `openrouter_in_flight_budget`): a reservation that frees
+ * itself. The other has the reason `weight_exceeds_budget`: this one request is
+ * estimated above the account's in-flight budget, which OpenRouter caps.
+ * Every other 403 is moderation or permission.
  */
 export const OPENROUTER: ProviderProfile = {
   name: "openrouter",
   authorize: bearer,
   classify(status, body, headers) {
     if (status === 401) return "auth"
-    const source = errorOf(body)?.metadata?.limit_source
-    if (status === 402) {
-      return headers.has("retry-after") || source === "openrouter_in_flight_budget" ? null : "credit"
-    }
-    return status === 403 && OPENROUTER_BUDGETS.has(source) ? "spend_limit" : null
+    if (status !== 402 && status !== 403) return null
+    const metadata = errorOf(body)?.metadata
+    if (OPENROUTER_BUDGETS.has(metadata?.limit_source)) return "spend_limit"
+    if (status === 403) return null
+    const frees =
+      headers.has("retry-after") || metadata?.limit_source === "openrouter_in_flight_budget"
+    return frees || metadata?.reason === "weight_exceeds_budget" ? null : "credit"
   },
 }
 
@@ -228,7 +244,15 @@ export const DEEPSEEK = paymentRequired("deepseek")
 export const MISTRAL = paymentRequired("mistral")
 /** Together AI: 402 when the balance reaches its spend cut-off (https://docs.together.ai/docs/error-codes). */
 export const TOGETHER = paymentRequired("together")
-/** Fireworks AI: 402 when the account is not on a paid plan or is over its usage limits (https://docs.fireworks.ai/guides/inference-error-codes). */
-export const FIREWORKS = paymentRequired("fireworks")
+/**
+ * Fireworks AI: 402 when the account is not on a paid plan or is over its usage
+ * limits (https://docs.fireworks.ai/guides/inference-error-codes). Its 401 also
+ * means insufficient permissions, so it passes.
+ */
+export const FIREWORKS: ProviderProfile = {
+  name: "fireworks",
+  authorize: bearer,
+  classify: (status) => (status === 402 ? "credit" : null),
+}
 /** Cerebras: 402 PaymentRequired (https://inference-docs.cerebras.ai/support/error). */
 export const CEREBRAS = paymentRequired("cerebras")

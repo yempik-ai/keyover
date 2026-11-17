@@ -133,8 +133,8 @@ Add keyover to this project. Follow https://github.com/yempik-ai/keyover/blob/ma
 |---|---|
 | Out of credit (`credit`) | A rate limit: a traffic control, and your SDK's to retry |
 | A spend limit you set (`spend_limit`) | A 5xx or a timeout: it may have run, and a resend could run it twice |
-| Key revoked or not accepted (`auth`) | A bad request: another key cannot fix the input |
-| | A safety hold, a region restriction, a model the key cannot access |
+| A key the provider does not know (`auth`) | A bad request: another key cannot fix the input |
+| | A safety hold, a region or IP restriction, a model the key cannot access |
 | | A cap your provider assigned (`provider_limit`), unless you opt in |
 
 keyover adds no retry for an ambiguous failure. It cannot promise more than that: a proxy between you and the provider, or your SDK's own retry of a timeout, is outside what a `fetch` can see.
@@ -167,7 +167,10 @@ Each profile is backed by the provider's own error reference or a field report, 
 | 429 | Project reached the monthly spend limit it set<br>`code: project_spend_limit_exceeded` | `spend_limit` | [documented](https://developers.openai.com/api/docs/guides/error-codes) |
 | 400 | Billing hard limit has been reached<br>`code: billing_hard_limit_reached` | `spend_limit` | [reported](https://community.openai.com/t/billing-hard-limit-reached-api-error/572481) |
 | 429 | Organization reached the monthly usage limit OpenAI assigned<br>`code: organization_usage_limit_exceeded` | `provider_limit` | [documented](https://developers.openai.com/api/docs/guides/error-codes) |
-| 401 | Incorrect API key provided | `auth` | [documented](https://developers.openai.com/api/docs/guides/error-codes) |
+| 401 | Incorrect API key provided<br>`code: invalid_api_key` | `auth` | [reported](https://community.openai.com/t/please-help-cant-get-python-quickstart-example-working-invalid-api-key/1127289) |
+| 401 | IP not authorized | stays | [documented](https://developers.openai.com/api/docs/guides/error-codes) |
+| 401 | You must be a member of an organization to use the API | stays | [documented](https://developers.openai.com/api/docs/guides/error-codes) |
+| 429 | A quota code this version does not know<br>`code: a_code_added_later` | stays | [documented](https://developers.openai.com/api/docs/guides/error-codes) |
 | 429 | Rate limit reached for requests | stays | [documented](https://developers.openai.com/api/docs/guides/error-codes) |
 | 429 | Request rate increased too quickly<br>`code: slow_down` | stays | [documented](https://developers.openai.com/api/docs/guides/error-codes) |
 | 403 | Country, region, or territory not supported | stays | [documented](https://developers.openai.com/api/docs/guides/error-codes) |
@@ -180,6 +183,7 @@ Each profile is backed by the provider's own error reference or a field report, 
 | Status | Answer | Pool | Evidence |
 |---|---|---|---|
 | 400 | Your credit balance is too low to access the Anthropic API | `credit` | [reported](https://github.com/anthropics/claude-code/issues/36604) |
+| 403 | A billing_error type on a status the reference does not give it<br>`type: billing_error` | stays | [documented](https://platform.claude.com/docs/en/api/errors) |
 | 402 | An issue with your billing or payment information<br>`type: billing_error` | `credit` | [documented](https://platform.claude.com/docs/en/api/errors) |
 | 400 | You have reached your specified API usage limits | `spend_limit` | [documented](https://platform.claude.com/docs/en/api/rate-limits) |
 | 400 | You have reached your specified workspace API usage limits | `spend_limit` | [documented](https://platform.claude.com/docs/en/api/rate-limits) |
@@ -214,6 +218,7 @@ Each profile is backed by the provider's own error reference or a field report, 
 | Status | Answer | Pool | Evidence |
 |---|---|---|---|
 | 402 | Your account or API key has insufficient credits<br>`limit_source: openrouter_credits` | `credit` | [documented](https://openrouter.ai/docs/api_reference/errors-and-debugging) |
+| 402 | This request's estimated cost is larger than the whole in-flight budget<br>`limit_source: openrouter_credits` | stays | [documented](https://openrouter.ai/docs/api_reference/limits) |
 | 403 | Key reached the limit set on it<br>`limit_source: openrouter_key_limit` | `spend_limit` | [documented](https://openrouter.ai/docs/api_reference/limits) |
 | 403 | Workspace budget reached<br>`limit_source: openrouter_workspace_budget` | `spend_limit` | [documented](https://openrouter.ai/docs/api_reference/limits) |
 | 401 | Invalid or disabled API key | `auth` | [documented](https://openrouter.ai/docs/api_reference/errors-and-debugging) |
@@ -240,6 +245,7 @@ Each profile is backed by the provider's own error reference or a field report, 
 |---|---|---|---|
 | 402 | Insufficient Balance | `credit` | [documented](https://api-docs.deepseek.com/quick_start/error_codes/) |
 | 401 | Authentication fails: wrong API key | `auth` | [documented](https://api-docs.deepseek.com/quick_start/error_codes/) |
+| 429 | Rate limit reached | stays | [documented](https://api-docs.deepseek.com/quick_start/error_codes/) |
 
 </details>
 
@@ -249,6 +255,7 @@ Each profile is backed by the provider's own error reference or a field report, 
 | Status | Answer | Pool | Evidence |
 |---|---|---|---|
 | 402 | Payment required | `credit` | [documented](https://docs.mistral.ai/resources/error-glossary) |
+| 429 | Too many requests | stays | [documented](https://docs.mistral.ai/resources/error-glossary) |
 
 </details>
 
@@ -258,6 +265,7 @@ Each profile is backed by the provider's own error reference or a field report, 
 | Status | Answer | Pool | Evidence |
 |---|---|---|---|
 | 402 | Organization's balance reached its spend cut-off | `credit` | [documented](https://docs.together.ai/docs/error-codes) |
+| 403 | Account cannot access the requested model or feature | stays | [documented](https://docs.together.ai/docs/error-codes) |
 
 </details>
 
@@ -267,6 +275,7 @@ Each profile is backed by the provider's own error reference or a field report, 
 | Status | Answer | Pool | Evidence |
 |---|---|---|---|
 | 402 | Account is not on a paid plan or has exceeded usage limits | `credit` | [documented](https://docs.fireworks.ai/guides/inference-error-codes) |
+| 401 | Invalid API key or insufficient permissions | stays | [documented](https://docs.fireworks.ai/guides/inference-error-codes) |
 | 412 | Account is suspended | stays | [documented](https://docs.fireworks.ai/guides/inference-error-codes) |
 
 </details>
@@ -277,6 +286,7 @@ Each profile is backed by the provider's own error reference or a field report, 
 | Status | Answer | Pool | Evidence |
 |---|---|---|---|
 | 402 | Payment required: no active subscription or balance | `credit` | [documented](https://inference-docs.cerebras.ai/support/error) |
+| 429 | Too many requests | stays | [documented](https://inference-docs.cerebras.ai/support/error) |
 
 </details>
 <!-- contracts:end -->
@@ -286,7 +296,7 @@ A provider that is not listed can still be pooled: write a [`ProviderProfile`](#
 ## How a key comes back
 
 - A rejected key cools down: 30 seconds at first, doubling on each consecutive rejection, up to 5 minutes. Change it with `cooldownMs: { initial, max }`.
-- When the cooldown ends, **one** request probes the key while concurrent requests stay on the serving key.
+- When the cooldown ends, **one** request probes the key while concurrent requests prefer the keys that serve.
 - A key that answers 2xx takes its priority back. There is no restart and nothing to reset.
 - **A cooling key is never refused locally.** If every other key rejects, the cooling ones are tried last, soonest first. The provider stays the authority on whether a key works, so a top-up takes effect on the next request that needs it.
 - Each request tries each key at most once. When every key rejects, the last rejection is returned with `x-should-retry: false`, which the OpenAI and Anthropic SDKs honor: they do not spend their retries on a refusal no retry can change.
@@ -368,7 +378,7 @@ Changing the key changes the organization, and some state does not follow.
 - [ ] It is an organization you are authorized to use for this workload. keyover is for billing resilience between your own funded accounts. It is not for multiplying free tiers or limits, and your provider's terms on usage limits apply to you as before.
 - [ ] Both organizations have access to the models you call. A missing model is a 404, and no failover moves it.
 - [ ] Both have the data controls you need: retention settings, and a DPA accepted in each.
-- [ ] A spend limit is set in each. The pool never spends an organization past its own limit.
+- [ ] A spend limit is set in each. The provider enforces it, per organization: the pool does not track spending, and a second organization adds its own limit to your total.
 - [ ] `key_rejected` reaches someone who can add credit.
 - [ ] `npx keyover check` passes.
 
