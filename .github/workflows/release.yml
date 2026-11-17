@@ -1,8 +1,9 @@
 name: Release
 
-# Publishing a GitHub release publishes that version to npm. It authenticates
-# as an npm trusted publisher (OIDC) when the package is set up for one on
-# npmjs.com, and with the NPM_TOKEN secret otherwise.
+# Publishing a GitHub release publishes that version to npm, once the
+# repository variable NPM_PUBLISH is "true". It authenticates as an npm trusted
+# publisher (OIDC) when the package is set up for one on npmjs.com, and with
+# the NPM_TOKEN secret otherwise.
 on:
   release:
     types: [published]
@@ -13,6 +14,7 @@ permissions:
 
 jobs:
   npm:
+    if: vars.NPM_PUBLISH == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
