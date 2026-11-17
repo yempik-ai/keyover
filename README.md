@@ -10,6 +10,7 @@
 
 <p align="center">
   <a href="https://yempik-ai.github.io/keyover/">Website and playground</a> ·
+  <a href="https://www.npmjs.com/package/keyover">npm</a> ·
   <a href="#quick-start">Quick start</a> ·
   <a href="#what-moves-a-request-and-what-does-not">The rule</a> ·
   <a href="https://yempik-ai.github.io/keyover/errors/">Error reference</a> ·
@@ -17,6 +18,7 @@
 </p>
 
 <p align="center">
+  <a href="https://www.npmjs.com/package/keyover"><img alt="keyover on npm" src="https://img.shields.io/npm/v/keyover?color=131416&label=npm"></a>
   <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-131416"></a>
   <a href="https://github.com/yempik-ai/keyover/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/yempik-ai/keyover/actions/workflows/ci.yml/badge.svg"></a>
   <img alt="Zero dependencies" src="https://img.shields.io/badge/dependencies-0-131416">
@@ -59,10 +61,10 @@ If you need routing across providers, budgets per team, a dashboard or key healt
 ## Quick start
 
 ```sh
-pnpm add https://github.com/yempik-ai/keyover/releases/latest/download/keyover.tgz
+pnpm add keyover
 ```
 
-keyover is not on the npm registry yet, so it installs from the latest release. npm 12 and newer refuse a URL install unless you allow it: `npm install --allow-remote=all https://github.com/yempik-ai/keyover/releases/latest/download/keyover.tgz`.
+Or `npm install keyover`, `yarn add keyover`, `bun add keyover`. It installs nothing else.
 
 ### OpenAI SDK
 

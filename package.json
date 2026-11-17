@@ -1,6 +1,6 @@
 {
   "name": "keyover",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "API key failover for OpenAI, Anthropic and the AI SDK. When one billing organization runs out of credit, the request moves to the next key. A drop-in fetch, no gateway, no dependencies.",
   "type": "module",
   "license": "MIT",

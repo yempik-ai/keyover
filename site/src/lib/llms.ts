@@ -14,7 +14,7 @@ export function llmsIndex(): string {
     `> ${home.meta.description}`,
     [
       `${site.name} is open source (${site.license}), made at ${site.maker.name}. Source: ${site.repo}`,
-      `Install: ${site.install}`,
+      `Install: ${site.install} (${site.package})`,
       `Install prompt for a coding agent: ${site.installPrompt}`,
     ].join("\n"),
     "## Docs",
@@ -50,7 +50,7 @@ export function llmsFull(): string {
   return [
     `# ${site.name}`,
     `> ${home.meta.description}`,
-    `Source: ${site.repo} · License: ${site.license} · Made at ${site.maker.name} (${site.maker.url})`,
+    `Source: ${site.repo} · Package: ${site.package} · License: ${site.license} · Made at ${site.maker.name} (${site.maker.url})`,
     `## ${how.title}`,
     how.lede,
     `\`\`\`sh\n${site.install}\n\`\`\``,

@@ -13,6 +13,7 @@ export default function Footer() {
         </p>
         <nav aria-label="Footer">
           <a href={site.repo}>{footer.links.github}</a>
+          <a href={site.package}>{footer.links.npm}</a>
           <Link href="/errors/">{footer.links.errors}</Link>
           <a href={`${site.url}/llms.txt`}>{footer.links.llms}</a>
         </nav>

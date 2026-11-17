@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.2
+
+keyover is on the npm registry: `pnpm add keyover`. The library is the same as 0.1.1.
+
+- The README, `SPEC.md` and the site install from npm.
+- A GitHub release publishes to npm from this repository's release workflow, as the package's trusted publisher, with provenance.
+
 ## 0.1.1
 
 Fixes from an independent audit of 0.1.0.

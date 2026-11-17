@@ -1,9 +1,9 @@
 name: Release
 
-# Publishing a GitHub release publishes that version to npm, once the
-# repository variable NPM_PUBLISH is "true". It authenticates as an npm trusted
-# publisher (OIDC) when the package is set up for one on npmjs.com, and with
-# the NPM_TOKEN secret otherwise.
+# Publishing a GitHub release publishes that version to npm, with provenance,
+# once the repository variable NPM_PUBLISH is "true". The job authenticates as
+# the package's npm trusted publisher (OIDC): the relationship on npmjs.com
+# names this repository and this file, so the repository stores no npm token.
 on:
   release:
     types: [published]
@@ -29,5 +29,3 @@ jobs:
       - run: pnpm test
       - run: pnpm build
       - run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

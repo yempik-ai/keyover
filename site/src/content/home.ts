@@ -185,6 +185,6 @@ export const home = {
   footer: {
     made: "Open source, made at",
     license: "MIT license",
-    links: { github: "GitHub", errors: "Error reference", llms: "llms.txt" },
+    links: { github: "GitHub", npm: "npm", errors: "Error reference", llms: "llms.txt" },
   },
 } as const;

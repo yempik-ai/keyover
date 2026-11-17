@@ -27,12 +27,10 @@ Stop and ask the user if any of these is true:
 
 ## 1. Install
 
-keyover is not on the npm registry yet: install the latest release's tarball with the project's package manager.
+Use the project's package manager. The package has no dependencies.
 
 ```bash
-pnpm add https://github.com/yempik-ai/keyover/releases/latest/download/keyover.tgz
-# npm 12 or newer refuses a URL install unless it is allowed:
-npm install --allow-remote=all https://github.com/yempik-ai/keyover/releases/latest/download/keyover.tgz
+pnpm add keyover      # or: npm install keyover, yarn add keyover, bun add keyover
 ```
 
 ## 2. Add the second key to the configuration

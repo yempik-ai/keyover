@@ -25,6 +25,7 @@ const jsonLd = [
     description: home.meta.description,
     url: `${site.url}/`,
     codeRepository: site.repo,
+    sameAs: site.package,
     programmingLanguage: "TypeScript",
     runtimePlatform: "Node.js",
     license: "https://opensource.org/license/mit",
