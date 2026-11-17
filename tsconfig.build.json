@@ -7,6 +7,14 @@
     "declaration": true,
     "declarationMap": true
   },
-  "include": ["src/index.ts"],
-  "exclude": ["src/**/*.test.ts", "examples"]
+  "include": [
+    "src/index.ts",
+    "src/testing.ts",
+    "src/check.ts",
+    "src/cli.ts"
+  ],
+  "exclude": [
+    "src/**/*.test.ts",
+    "examples"
+  ]
 }

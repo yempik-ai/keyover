@@ -1,27 +1,64 @@
 {
-  "name": "ai-key-failover",
+  "name": "keyover",
   "version": "0.1.0",
-  "description": "API-key failover for AI provider SDKs through a provider-aware fetch transport.",
+  "description": "API key failover for OpenAI, Anthropic and the AI SDK. When one billing organization runs out of credit, the request moves to the next key. A drop-in fetch, no gateway, no dependencies.",
   "type": "module",
+  "license": "MIT",
+  "author": "Simone Bova (https://simonebova.com)",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yempik-ai/keyover.git"
+  },
+  "homepage": "https://yempik-ai.github.io/keyover/",
+  "bugs": "https://github.com/yempik-ai/keyover/issues",
+  "keywords": [
+    "openai",
+    "anthropic",
+    "claude",
+    "ai-sdk",
+    "vercel-ai-sdk",
+    "llm",
+    "api-key",
+    "failover",
+    "fallback",
+    "insufficient_quota",
+    "credit-balance",
+    "billing",
+    "fetch",
+    "key-rotation",
+    "high-availability"
+  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./testing": {
+      "types": "./dist/testing.d.ts",
+      "import": "./dist/testing.js"
     }
   },
-  "files": ["dist", "README.md", "LICENSE"],
+  "bin": {
+    "keyover": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "sideEffects": false,
   "engines": {
-    "node": ">=20"
+    "node": ">=20.12"
   },
-  "license": "MIT",
-  "keywords": ["openai", "anthropic", "claude", "ai-sdk", "api-key", "failover", "fetch", "billing"],
   "packageManager": "pnpm@12.18.0",
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
-    "prepublishOnly": "pnpm typecheck && pnpm test && pnpm build"
+    "site": "pnpm --filter site dev",
+    "check": "pnpm typecheck && pnpm test && pnpm build && pnpm --filter site typecheck && pnpm --filter site build",
+    "prepublishOnly": "pnpm typecheck && pnpm test && pnpm build",
+    "tables": "node scripts/readme-tables.ts"
   },
   "devDependencies": {
     "@ai-sdk/anthropic": "4.0.99",

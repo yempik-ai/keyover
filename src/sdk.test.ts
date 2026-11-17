@@ -4,12 +4,9 @@ import { createOpenAI } from "@ai-sdk/openai"
 import { generateText } from "ai"
 import OpenAI from "openai"
 import { describe, expect, it, vi } from "vitest"
-import { ANTHROPIC, createKeyPool, OPENAI, POOLED_API_KEY, type ProviderProfile } from "./index.js"
+import { ANTHROPIC, createKeyPool, OPENAI, POOLED_API_KEY, type ProviderProfile } from "./index.ts"
 
-const keys = [
-  { id: "a", apiKey: "sk-test-a" },
-  { id: "b", apiKey: "sk-test-b" },
-] as const
+const keys = { a: "sk-test-a", b: "sk-test-b" } as const
 
 function rejection(provider: ProviderProfile): Response {
   return provider === OPENAI
@@ -140,6 +137,36 @@ describe("official Anthropic SDK", () => {
       .toEqual(sent[0]?.headers.has("authorization")
         ? ["Bearer sk-test-a", "Bearer sk-test-b"]
         : ["sk-test-a", "sk-test-b"])
+  })
+})
+
+describe("official Anthropic SDK, every key rejecting", () => {
+  it("throws the last 429 without spending the SDK's retries", async () => {
+    const TIER_CAP = () =>
+      Response.json(
+        {
+          type: "error",
+          error: { type: "rate_limit_error", details: { error_code: "enforced_spend_limit_reached" } },
+        },
+        { status: 429 },
+      )
+    const fetch = vi.fn<typeof globalThis.fetch>(async () => TIER_CAP())
+    const pool = createKeyPool({
+      provider: ANTHROPIC,
+      keys,
+      fetch,
+      failoverOn: ["credit", "spend_limit", "auth", "provider_limit"],
+    })
+    // The SDK's default: it retries a 429 twice unless the response says not to.
+    const client = new Anthropic(pool.clientOptions)
+
+    const error = await client.messages
+      .create({ model: "m", max_tokens: 16, messages: [{ role: "user", content: "Hi" }] })
+      .catch((error: unknown) => error)
+
+    expect(error).toBeInstanceOf(Anthropic.RateLimitError)
+    // One attempt per key, and no second round.
+    expect(fetch).toHaveBeenCalledTimes(2)
   })
 })
 

@@ -6,7 +6,7 @@ import {
   OPENAI,
   POOLED_API_KEY,
   type ProviderProfile,
-} from "./index.js"
+} from "./index.ts"
 
 const URL_ = "https://api.example.test/v1/responses"
 
@@ -45,10 +45,7 @@ function pool(script: Record<string, (() => Response)[]>, profile: ProviderProfi
   let clock = 1_000
   const keys = createKeyPool({
     provider: profile,
-    keys: [
-      { id: "primary", apiKey: "k-primary" },
-      { id: "fallback", apiKey: "k-fallback" },
-    ],
+    keys: { primary: "k-primary", fallback: "k-fallback" },
     fetch: upstream.fetch,
     now: () => clock,
     cooldownMs: { initial: 1_000, max: 4_000 },
@@ -79,7 +76,7 @@ describe("createKeyPool", () => {
     expect(p.keys.status()[0]).toMatchObject({
       id: "primary",
       state: "cooling",
-      lastReason: "billing",
+      lastReason: "credit",
     })
   })
 
@@ -95,6 +92,25 @@ describe("createKeyPool", () => {
     expect(await probed.json()).toEqual({ topped: "up" })
     expect(p.events.at(-1)).toEqual({ type: "key_restored", key: "primary" })
     expect(p.keys.status().every((s) => s.state === "serving")).toBe(true)
+  })
+
+  it("does not call a recovering key restored until it answers 2xx", async () => {
+    const RATE_LIMITED = () => json(429, { error: { type: "requests", code: "rate_limit_exceeded" } })
+    const p = pool({
+      "k-primary": [OUT_OF_CREDIT, RATE_LIMITED, () => json(200, { ok: 1 })],
+      "k-fallback": [() => json(200, { ok: 1 })],
+    })
+    await p.call()
+    p.advance(1_000)
+
+    // The probe gets a rate limit: the caller's to retry, and no proof the key can pay.
+    expect((await p.call()).status).toBe(429)
+    expect(p.keys.status()[0]).toMatchObject({ state: "recovering", consecutiveRejections: 1 })
+    expect(p.events.some((e) => e.type === "key_restored")).toBe(false)
+
+    expect((await p.call()).status).toBe(200)
+    expect(p.keys.status()[0]).toMatchObject({ state: "serving", consecutiveRejections: 0 })
+    expect(p.events.at(-1)).toEqual({ type: "key_restored", key: "primary" })
   })
 
   it("doubles the cooldown of a key that keeps rejecting, up to the cap", async () => {
@@ -115,10 +131,7 @@ describe("createKeyPool", () => {
     let primaryCalls = 0
     const keys = createKeyPool({
       provider: OPENAI,
-      keys: [
-        { id: "primary", apiKey: "k-primary" },
-        { id: "fallback", apiKey: "k-fallback" },
-      ],
+      keys: { primary: "k-primary", fallback: "k-fallback" },
       cooldownMs: { initial: 0, max: 0 },
       fetch: async (input, init) => {
         const key = new Headers(init?.headers).get("authorization")!.replace("Bearer ", "")
@@ -152,10 +165,10 @@ describe("createKeyPool", () => {
     expect(p.events.at(-1)).toEqual({
       type: "all_keys_rejected",
       keys: ["primary", "fallback"],
-      reason: "billing",
+      reason: "credit",
     })
 
-    // Both cooling: still tried, soonest retry first — the provider decides, never the pool.
+    // Both cooling: still tried, soonest retry first: the provider decides, never the pool.
     await p.call()
     expect(p.sent.map((s) => s.key)).toEqual(["k-primary", "k-fallback", "k-primary", "k-fallback"])
   })
@@ -184,7 +197,7 @@ describe("createKeyPool", () => {
     const seen: Headers[] = []
     const keys = createKeyPool({
       provider: OPENAI,
-      keys: [{ id: "only", apiKey: "k-only", headers: { "openai-project": "proj-own" } }],
+      keys: { only: { apiKey: "k-only", headers: { "openai-project": "proj-own" } } },
       fetch: async (_input, init) => {
         seen.push(new Headers(init?.headers))
         return json(200, {})
@@ -203,10 +216,7 @@ describe("createKeyPool", () => {
     const keys = createKeyPool({
       provider: OPENAI,
       cooldownMs: { initial: 0, max: 0 },
-      keys: [
-        { id: "a", apiKey: "ka" },
-        { id: "b", apiKey: "kb" },
-      ],
+      keys: { a: "ka", b: "kb" },
       fetch: async (input, init) => {
         const request = new Request(input, init)
         bodies.push(await request.text())
@@ -233,10 +243,7 @@ describe("createKeyPool", () => {
     let primaryCalls = 0
     const keys = createKeyPool({
       provider: ANTHROPIC,
-      keys: [
-        { id: "primary", apiKey: "k-primary" },
-        { id: "fallback", apiKey: "k-fallback" },
-      ],
+      keys: { primary: "k-primary", fallback: "k-fallback" },
       cooldownMs: { initial: 0, max: 0 },
       fetch: async (_input, init) => {
         if (new Headers(init?.headers).get("x-api-key") !== "k-primary") return json(200, {})
@@ -272,7 +279,7 @@ describe("createKeyPool", () => {
     let sent = 0
     const keys = createKeyPool({
       provider: OPENAI,
-      keys: [{ id: "a", apiKey: "ka" }],
+      keys: { a: "ka" },
       fetch: async () => {
         sent += 1
         return json(200, {})
@@ -290,6 +297,19 @@ describe("createKeyPool", () => {
     expect(sent).toBe(0)
   })
 
+  it("leaves out a key that is not set, and refuses a pool with none", () => {
+    const one = createKeyPool({
+      provider: OPENAI,
+      keys: { primary: "k-primary", spare: undefined, other: { apiKey: "" } },
+    })
+    expect(one.status().map((s) => s.id)).toEqual(["primary"])
+    expect(one.clientOptions).toEqual({ apiKey: POOLED_API_KEY, fetch: one.fetch })
+
+    expect(() => createKeyPool({ provider: OPENAI, keys: { primary: undefined } })).toThrow(
+      "key pool for openai has no keys",
+    )
+  })
+
   it("passes non-HTTP fetches through without a key or a health change", async () => {
     const p = pool({})
     await p.keys.fetch("data:,")
@@ -301,10 +321,7 @@ describe("createKeyPool", () => {
     const controller = new AbortController()
     const keys = createKeyPool({
       provider: OPENAI,
-      keys: [
-        { id: "a", apiKey: "ka" },
-        { id: "b", apiKey: "kb" },
-      ],
+      keys: { a: "ka", b: "kb" },
       fetch: async () => {
         controller.abort(new Error("caller gave up"))
         return OUT_OF_CREDIT()
@@ -315,31 +332,11 @@ describe("createKeyPool", () => {
 })
 
 describe("OPENAI", () => {
-  it.each([
-    [429, { error: { type: "insufficient_quota", code: "insufficient_quota" } }, "billing"],
-    [
-      429,
-      { error: { type: "insufficient_quota", code: "project_spend_limit_exceeded" } },
-      "billing",
-    ],
-    [
-      429,
-      { error: { type: "insufficient_quota", code: "organization_spend_limit_exceeded" } },
-      "billing",
-    ],
-    [429, { error: { type: "rate_limit_error", code: "rate_limit_exceeded" } }, null],
-    [401, { error: { code: "invalid_api_key" } }, "auth"],
-    [403, { error: { code: "unsupported_country_region_territory" } }, null],
-    [404, { error: { code: "model_not_found" } }, null],
-  ] as const)("classifies %i %j as %s", (status, body, reason) => {
-    expect(OPENAI.classify(status, body)).toBe(reason)
-  })
-
   it("resends without the reasoning another organization cannot decrypt, on the same key", async () => {
     const bodies: unknown[] = []
     const keys = createKeyPool({
       provider: OPENAI,
-      keys: [{ id: "b", apiKey: "kb" }],
+      keys: { b: "kb" },
       fetch: async (input, init) => {
         const body = JSON.parse(await new Request(input, init).text()) as {
           input: { type?: string }[]
@@ -377,7 +374,7 @@ describe("OPENAI portability, from a Request and through a measured body", () =>
     const seen: { length: string | null; body: string }[] = []
     const keys = createKeyPool({
       provider: OPENAI,
-      keys: [{ id: "b", apiKey: "kb" }],
+      keys: { b: "kb" },
       fetch: async (input, init) => {
         const body = await new Request(input, init).text()
         seen.push({ length: new Headers(init?.headers).get("content-length"), body })
@@ -410,54 +407,6 @@ describe("OPENAI portability, from a Request and through a measured body", () =>
 })
 
 describe("ANTHROPIC", () => {
-  it.each([
-    [402, { type: "error", error: { type: "billing_error", message: "payment" } }, "billing"],
-    [
-      400,
-      {
-        error: {
-          type: "invalid_request_error",
-          message: "Your credit balance is too low to access the Anthropic API.",
-        },
-      },
-      "billing",
-    ],
-    [
-      400,
-      {
-        error: {
-          type: "invalid_request_error",
-          message: "You have reached your specified workspace API usage limits.",
-        },
-      },
-      "billing",
-    ],
-    [
-      429,
-      {
-        error: {
-          type: "rate_limit_error",
-          details: { error_code: "enforced_spend_limit_reached" },
-        },
-      },
-      "billing",
-    ],
-    [
-      429,
-      { error: { type: "rate_limit_error", details: { error_code: "ramp_limit_exceeded" } } },
-      null,
-    ],
-    [
-      400,
-      { error: { type: "invalid_request_error", details: { error_code: "organization_on_hold" } } },
-      null,
-    ],
-    [401, { error: { type: "authentication_error" } }, "auth"],
-    [529, { error: { type: "overloaded_error" } }, null],
-  ] as const)("classifies %i %j as %s", (status, body, reason) => {
-    expect(ANTHROPIC.classify(status, body)).toBe(reason)
-  })
-
   it("keeps the header scheme the SDK chose", () => {
     const bearer = new Headers({ authorization: `Bearer ${POOLED_API_KEY}` })
     ANTHROPIC.authorize(bearer, "sk-ant")
