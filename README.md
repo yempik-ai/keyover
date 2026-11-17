@@ -59,8 +59,10 @@ If you need routing across providers, budgets per team, a dashboard or key healt
 ## Quick start
 
 ```sh
-pnpm add keyover
+pnpm add https://github.com/yempik-ai/keyover/releases/latest/download/keyover.tgz
 ```
+
+keyover is not on the npm registry yet, so it installs from the latest release. npm 12 and newer refuse a URL install unless you allow it: `npm install --allow-remote=all https://github.com/yempik-ai/keyover/releases/latest/download/keyover.tgz`.
 
 ### OpenAI SDK
 

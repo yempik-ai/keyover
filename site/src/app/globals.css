@@ -248,19 +248,22 @@ button {
 .install {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 6px 6px 20px;
-  border-radius: 999px;
+  gap: 10px;
+  padding: 8px 8px 8px 18px;
+  border-radius: 22px;
   background: var(--ink);
   color: var(--paper);
   max-width: 100%;
 }
 
+/* The command is a URL for now: it wraps instead of hiding its end. */
 .install code {
-  font: 500 15px / 1 var(--mono);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  font: 500 13px / 1.45 var(--mono);
+  overflow-wrap: anywhere;
+}
+
+.install button {
+  flex: none;
 }
 
 .install button {

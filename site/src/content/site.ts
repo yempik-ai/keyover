@@ -11,7 +11,8 @@ export const site = {
   license: "MIT",
   maker: { name: "Yempik", url: "https://www.yempik.com" },
   author: { name: "Simone Bova", url: "https://simonebova.com" },
-  install: "pnpm add keyover",
+  /** The latest release's tarball: the package is not on the npm registry yet. */
+  install: "pnpm add https://github.com/yempik-ai/keyover/releases/latest/download/keyover.tgz",
   /** The sentence to give a coding agent that should add the pool to a project. */
   installPrompt:
     "Add keyover to this project. Follow https://github.com/yempik-ai/keyover/blob/main/SPEC.md from start to finish.",
